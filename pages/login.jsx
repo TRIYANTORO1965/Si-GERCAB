@@ -1,6 +1,9 @@
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Image from "next/image";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 export default function Login() {
   const router = useRouter();
@@ -18,24 +21,45 @@ export default function Login() {
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const { nama, username, password } = form;
+    const { username, password } = form;
 
-    if (username === "admin" && password === "admin123") {
-      localStorage.setItem("role", "admin");
-      localStorage.setItem("nama", nama || "Admin");
-      localStorage.setItem("loginUser", JSON.stringify({ nama, role: "admin" }));
+    try {
+      // Autentikasi Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, username, password);
+      const user = userCredential.user;
+      console.log("UID yang login:", user.uid);
+
+      const db = getFirestore();
+
+      // Coba ambil dari koleksi "user"
+      let userDoc = await getDoc(doc(db, "user", user.uid));
+
+      // Jika tidak ada di "user", coba di "siswa"
+      if (!userDoc.exists()) {
+        userDoc = await getDoc(doc(db, "siswa", user.uid));
+      }
+
+      if (!userDoc.exists()) {
+        throw new Error("Data pengguna tidak ditemukan di Firestore.");
+      }
+
+      const data = userDoc.data();
+      const role = data.role || "siswa";
+      const nama = data.nama || form.nama;
+
+      localStorage.setItem("role", role);
+      localStorage.setItem("nama", nama);
+      localStorage.setItem("loginUser", JSON.stringify({ nama, role }));
+
       router.replace("/");
-    } else if (username === "siswa" && password === "siswa123") {
-      localStorage.setItem("role", "siswa");
-      localStorage.setItem("nama", nama || "Siswa");
-      localStorage.setItem("loginUser", JSON.stringify({ nama, role: "siswa" }));
-      router.replace("/");
-    } else {
-      setError("Username atau password salah.");
+    } catch (err) {
+      console.error("Firebase login error:", err);
+      setError("Login gagal. Periksa kembali email dan password.");
     }
   };
+
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-green-50 px-4">
@@ -64,7 +88,7 @@ export default function Login() {
       </div>
 
       <p className="absolute bottom-2 left-2 text-xs italic text-gray-500">
-        Aplikasi ini dibuat oleh <strong>@Mr.Tri25</strong>
+        by <strong>@Mr.Tri25</strong>
       </p>
     </div>
   );
